@@ -15,11 +15,12 @@ const PORT = process.env.PORT || 3001;
 const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';
 
 app.use(cors({ origin: ['http://localhost:5173', 'http://127.0.0.1:5173'] }));
-app.use(express.json());
+app.use(express.json({ limit: '2mb' }));
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-const AGENTS = {
+// ── Default agent definitions ────────────────────────────────────────────────
+const DEFAULT_AGENTS = {
   director: {
     name: 'Director',
     role: 'Manager',
@@ -118,137 +119,134 @@ Be direct. Pair every weakness with a fix.`,
   },
 };
 
-async function streamAgent(agentKey, messages, res) {
-  const agent = AGENTS[agentKey];
+// ── Helpers ──────────────────────────────────────────────────────────────────
+const PHONETIC = [
+  'ALPHA', 'BRAVO', 'CHARLIE', 'DELTA', 'ECHO', 'FOXTROT',
+  'GOLF', 'HOTEL', 'INDIA', 'JULIET', 'KILO', 'LIMA',
+  'MIKE', 'NOVEMBER', 'OSCAR', 'PAPA', 'QUEBEC', 'ROMEO',
+];
 
-  res.write(
-    `data: ${JSON.stringify({ type: 'agent_start', agent: agentKey, name: agent.name, role: agent.role })}\n\n`
-  );
-
-  let fullContent = '';
-
-  try {
-    const stream = anthropic.messages.stream({
-      model: MODEL,
-      max_tokens: 1024,
-      system: agent.systemPrompt,
-      messages,
-    });
-
-    for await (const text of stream.textStream) {
-      fullContent += text;
-      res.write(`data: ${JSON.stringify({ type: 'agent_chunk', agent: agentKey, chunk: text })}\n\n`);
-    }
-  } catch (err) {
-    console.error(`[${agentKey}] stream error:`, err.message);
-    const errChunk = `\n[Agent error: ${err.message}]`;
-    fullContent += errChunk;
-    res.write(`data: ${JSON.stringify({ type: 'agent_chunk', agent: agentKey, chunk: errChunk })}\n\n`);
-  }
-
-  res.write(`data: ${JSON.stringify({ type: 'agent_done', agent: agentKey, content: fullContent })}\n\n`);
-  return fullContent;
+function generateMissionId() {
+  const num = Math.floor(Math.random() * 9000) + 1000;
+  const code = PHONETIC[Math.floor(Math.random() * PHONETIC.length)];
+  return `MSN-${num}-${code}`;
 }
 
+async function callAgent(systemPrompt, messages) {
+  const response = await anthropic.messages.create({
+    model: MODEL,
+    max_tokens: 1024,
+    system: systemPrompt,
+    messages,
+  });
+  return {
+    content: response.content[0]?.text ?? '',
+    usage: response.usage,
+  };
+}
+
+function buildContextMessages(agentKey, request, prev) {
+  const o = prev || {};
+  switch (agentKey) {
+    case 'director':
+      return [{ role: 'user', content: `New boardroom session. The mission request is:\n\n"${request}"\n\nDeliver your mission brief. Set the context and frame our objective for the team.` }];
+    case 'architect':
+      return [{ role: 'user', content: `Request: "${request}"\n\nDirector's mission brief:\n${o.director || '(not available)'}\n\nEngineer the perfect prompt for this task.` }];
+    case 'spark':
+      return [{ role: 'user', content: `Request: "${request}"\n\nArchitect's structured prompt:\n${o.architect || '(not available)'}\n\nGenerate your most creative and distinct approaches.` }];
+    case 'stack':
+      return [{ role: 'user', content: `Request: "${request}"\n\nArchitect:\n${o.architect || '(not available)'}\n\nSpark:\n${o.spark || '(not available)'}\n\nProvide technical architecture and implementation recommendations.` }];
+    case 'memo':
+      return [{ role: 'user', content: `Request: "${request}"\n\nDirector:\n${o.director || ''}\n\nArchitect:\n${o.architect || ''}\n\nSpark:\n${o.spark || ''}\n\nStack:\n${o.stack || ''}\n\nSynthesize everything into clean, actionable notes.` }];
+    case 'sharp':
+      return [{ role: 'user', content: `Request: "${request}"\n\nAll boardroom outputs:\n\nDirector: ${o.director || ''}\n\nArchitect: ${o.architect || ''}\n\nSpark: ${o.spark || ''}\n\nStack: ${o.stack || ''}\n\nMemo: ${o.memo || ''}\n\nReview everything. Find the gaps. Elevate quality.` }];
+    default:
+      return [{ role: 'user', content: request }];
+  }
+}
+
+// ── POST /api/agents/run ─────────────────────────────────────────────────────
 app.post('/api/agents/run', async (req, res) => {
-  const { request } = req.body;
+  const { request, customAgents } = req.body;
 
   if (!request?.trim()) {
     return res.status(400).json({ error: 'Request is required' });
   }
-
   if (!process.env.ANTHROPIC_API_KEY) {
     return res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured in .env' });
   }
 
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no');
-  res.flushHeaders();
-
   const req$ = request.trim();
+  const missionId = generateMissionId();
+  const agentOutputs = {};
+  let totalInput = 0;
+  let totalOutput = 0;
+
+  const getPrompt = (key) =>
+    customAgents?.[key]?.systemPrompt?.trim() || DEFAULT_AGENTS[key].systemPrompt;
 
   try {
-    // ── Step 1: Director kickoff ──────────────────────────────────────────
-    const directorKickoff = await streamAgent(
-      'director',
-      [{ role: 'user', content: `New boardroom session. The mission request is:\n\n"${req$}"\n\nDeliver your mission brief. Set the context and frame our objective for the team.` }],
-      res
-    );
+    const SEQUENCE = ['director', 'architect', 'spark', 'stack', 'memo', 'sharp'];
 
-    // ── Step 2: Architect ─────────────────────────────────────────────────
-    const architectOut = await streamAgent(
-      'architect',
-      [{ role: 'user', content: `Request: "${req$}"\n\nDirector's mission brief:\n${directorKickoff}\n\nEngineer the perfect prompt for this task.` }],
-      res
-    );
-
-    // ── Step 3: Spark ─────────────────────────────────────────────────────
-    const sparkOut = await streamAgent(
-      'spark',
-      [{ role: 'user', content: `Request: "${req$}"\n\nArchitect's structured prompt:\n${architectOut}\n\nGenerate your most creative and distinct approaches.` }],
-      res
-    );
-
-    // ── Step 4: Stack ─────────────────────────────────────────────────────
-    const stackOut = await streamAgent(
-      'stack',
-      [{ role: 'user', content: `Request: "${req$}"\n\nArchitect:\n${architectOut}\n\nSpark:\n${sparkOut}\n\nProvide technical architecture and implementation recommendations.` }],
-      res
-    );
-
-    // ── Step 5: Memo ──────────────────────────────────────────────────────
-    const memoOut = await streamAgent(
-      'memo',
-      [{ role: 'user', content: `Request: "${req$}"\n\nDirector:\n${directorKickoff}\n\nArchitect:\n${architectOut}\n\nSpark:\n${sparkOut}\n\nStack:\n${stackOut}\n\nSynthesize everything into clean, actionable notes.` }],
-      res
-    );
-
-    // ── Step 6: Sharp ─────────────────────────────────────────────────────
-    const sharpOut = await streamAgent(
-      'sharp',
-      [{ role: 'user', content: `Request: "${req$}"\n\nAll boardroom outputs:\n\nDirector: ${directorKickoff}\n\nArchitect: ${architectOut}\n\nSpark: ${sparkOut}\n\nStack: ${stackOut}\n\nMemo: ${memoOut}\n\nReview everything. Find the gaps. Elevate quality.` }],
-      res
-    );
-
-    // ── Step 7: Director final summary ────────────────────────────────────
-    res.write(`data: ${JSON.stringify({ type: 'summary_start' })}\n\n`);
-
-    let summaryContent = '';
-
-    try {
-      const summaryStream = anthropic.messages.stream({
-        model: MODEL,
-        max_tokens: 1024,
-        system: AGENTS.director.systemPrompt,
-        messages: [
-          {
-            role: 'user',
-            content: `Request: "${req$}"\n\nYour boardroom has completed analysis:\n\nARCHITECT:\n${architectOut}\n\nSPARK:\n${sparkOut}\n\nSTACK:\n${stackOut}\n\nMEMO:\n${memoOut}\n\nSHARP:\n${sharpOut}\n\nDeliver your executive verdict and concrete next steps. This is your closing statement to the board.`,
-          },
-        ],
-      });
-
-      for await (const text of summaryStream.textStream) {
-        summaryContent += text;
-        res.write(`data: ${JSON.stringify({ type: 'summary_chunk', chunk: text })}\n\n`);
-      }
-    } catch (err) {
-      console.error('[director-summary] stream error:', err.message);
-      summaryContent = `[Summary error: ${err.message}]`;
-      res.write(`data: ${JSON.stringify({ type: 'summary_chunk', chunk: summaryContent })}\n\n`);
+    for (const key of SEQUENCE) {
+      const messages = buildContextMessages(key, req$, agentOutputs);
+      const { content, usage } = await callAgent(getPrompt(key), messages);
+      agentOutputs[key] = content;
+      totalInput  += usage.input_tokens;
+      totalOutput += usage.output_tokens;
     }
 
-    res.write(`data: ${JSON.stringify({ type: 'complete', summary: summaryContent })}\n\n`);
+    // Director final summary
+    const summaryMessages = [
+      {
+        role: 'user',
+        content: `Request: "${req$}"\n\nYour boardroom has completed analysis:\n\nARCHITECT:\n${agentOutputs.architect}\n\nSPARK:\n${agentOutputs.spark}\n\nSTACK:\n${agentOutputs.stack}\n\nMEMO:\n${agentOutputs.memo}\n\nSHARP:\n${agentOutputs.sharp}\n\nDeliver your executive verdict and concrete next steps. This is your closing statement to the board.`,
+      },
+    ];
+    const { content: summary, usage: sumUsage } = await callAgent(getPrompt('director'), summaryMessages);
+    totalInput  += sumUsage.input_tokens;
+    totalOutput += sumUsage.output_tokens;
+
+    res.json({
+      missionId,
+      agentOutputs,
+      summary,
+      totalTokens: { input: totalInput, output: totalOutput },
+    });
   } catch (err) {
-    console.error('[/api/agents/run] fatal error:', err);
-    res.write(`data: ${JSON.stringify({ type: 'error', message: err.message })}\n\n`);
-  } finally {
-    res.end();
+    console.error('[/api/agents/run]', err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 
+// ── POST /api/agents/single ──────────────────────────────────────────────────
+app.post('/api/agents/single', async (req, res) => {
+  const { agentKey, request, previousOutputs, customAgents } = req.body;
+
+  if (!agentKey || !request?.trim()) {
+    return res.status(400).json({ error: 'agentKey and request are required' });
+  }
+  if (!DEFAULT_AGENTS[agentKey]) {
+    return res.status(400).json({ error: `Unknown agent: ${agentKey}` });
+  }
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured in .env' });
+  }
+
+  const getPrompt = (key) =>
+    customAgents?.[key]?.systemPrompt?.trim() || DEFAULT_AGENTS[key].systemPrompt;
+
+  try {
+    const messages = buildContextMessages(agentKey, request.trim(), previousOutputs || {});
+    const { content, usage } = await callAgent(getPrompt(agentKey), messages);
+    res.json({ agentKey, content, tokens: usage });
+  } catch (err) {
+    console.error(`[/api/agents/single/${agentKey}]`, err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /api/health ───────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', model: MODEL, apiKey: !!process.env.ANTHROPIC_API_KEY });
 });
