@@ -170,7 +170,7 @@ export default function App() {
 
   // ── Deploy all agents ─────────────────────────────────────────────────────
   const deployAgents = useCallback(async (requestOverride) => {
-    const request = (requestOverride ?? inputValue).trim();
+    const request = (typeof requestOverride === 'string' ? requestOverride : inputValue).trim();
     if (!request || isRunning) return;
 
     startTimeRef.current = Date.now();
