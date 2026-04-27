@@ -1,9 +1,13 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Crown, Loader2, CheckCircle2, Copy, Check, Download } from 'lucide-react';
+import { Crown, Loader2, CheckCircle2, Copy, Check, Download, Terminal } from 'lucide-react';
+import MarkdownRenderer from './MarkdownRenderer.jsx';
+import { extractClaudeCodePrompt } from './ClaudeCodeModal.jsx';
 
-export default function BoardSummary({ summaryState, session }) {
-  const bodyRef       = useRef(null);
+export default function BoardSummary({ summaryState, session, isLight, fontSize, onShowClaudeCode }) {
+  const bodyRef = useRef(null);
   const [copied, setCopied] = useState(false);
+
+  const hasClaudeCode = !!extractClaudeCodePrompt(summaryState?.content);
 
   useEffect(() => {
     if (bodyRef.current && summaryState.status === 'thinking') {
@@ -14,9 +18,8 @@ export default function BoardSummary({ summaryState, session }) {
   const handleCopy = async () => {
     const text = summaryState?.content ?? '';
     if (!text) return;
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
+    try { await navigator.clipboard.writeText(text); }
+    catch {
       const ta = document.createElement('textarea');
       ta.value = text;
       document.body.appendChild(ta);
@@ -92,6 +95,31 @@ export default function BoardSummary({ summaryState, session }) {
     URL.revokeObjectURL(url);
   };
 
+  // Theme colours
+  const bg        = isLight ? '#fffdf7' : '#070e07';
+  const bdr       = isLight ? 'rgba(201,168,76,0.25)' : 'rgba(201,168,76,0.2)';
+  const headBdr   = isLight ? 'rgba(201,168,76,0.2)'  : 'rgba(201,168,76,0.12)';
+  const footBdr   = isLight ? 'rgba(201,168,76,0.15)' : 'rgba(201,168,76,0.08)';
+  const footBg    = isLight ? 'rgba(201,168,76,0.05)' : 'rgba(201,168,76,0.03)';
+  const tokColor  = isLight ? '#7a7060'               : '#3a5a3a';
+  const shadow    = isLight ? '0 0 40px rgba(201,168,76,0.08)' : '0 0 60px rgba(201,168,76,0.05)';
+
+  const toolBtn = (variant = 'dim') => {
+    const map = {
+      gold:    { color: '#C9A84C', bg: 'rgba(201,168,76,0.08)',  border: 'rgba(201,168,76,0.2)'  },
+      green:   { color: '#4ade80', bg: 'rgba(74,222,128,0.08)',  border: 'rgba(74,222,128,0.25)' },
+      dim:     { color: isLight ? '#7a7060' : '#527052', bg: isLight ? 'rgba(0,0,0,0.04)' : 'rgba(82,112,82,0.08)', border: isLight ? '#d4c8a0' : 'rgba(82,112,82,0.2)' },
+    };
+    const v = map[variant];
+    return {
+      display: 'flex', alignItems: 'center', gap: 5,
+      padding: '5px 10px', borderRadius: 5, cursor: 'pointer',
+      fontSize: '10px', fontFamily: 'monospace', fontWeight: 600,
+      color: v.color, background: v.bg, border: `1px solid ${v.border}`,
+      transition: 'all 0.15s',
+    };
+  };
+
   return (
     <section className="mb-10">
       {/* Section header */}
@@ -121,18 +149,16 @@ export default function BoardSummary({ summaryState, session }) {
       {/* Card */}
       <div
         className="rounded-xl overflow-hidden"
-        style={{
-          background:  '#070e07',
-          border:      '1px solid rgba(201,168,76,0.2)',
-          boxShadow:   '0 0 60px rgba(201,168,76,0.05)',
-        }}
+        style={{ background: bg, border: `1px solid ${bdr}`, boxShadow: shadow }}
       >
         {/* Card header */}
         <div
           className="flex items-center gap-3 px-5 py-4"
           style={{
-            background:   'linear-gradient(90deg, rgba(201,168,76,0.07) 0%, transparent 100%)',
-            borderBottom: '1px solid rgba(201,168,76,0.12)',
+            background:   isLight
+              ? 'linear-gradient(90deg, rgba(201,168,76,0.08) 0%, transparent 100%)'
+              : 'linear-gradient(90deg, rgba(201,168,76,0.07) 0%, transparent 100%)',
+            borderBottom: `1px solid ${headBdr}`,
           }}
         >
           <div
@@ -153,32 +179,21 @@ export default function BoardSummary({ summaryState, session }) {
           {/* Toolbar */}
           {summaryState.status === 'done' && summaryState.content && (
             <div className="flex items-center gap-2">
-              <button
-                onClick={handleCopy}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[10px] font-mono transition-all"
-                style={{
-                  color:      copied ? '#4ade80' : '#C9A84C',
-                  background: 'rgba(201,168,76,0.08)',
-                  border:     '1px solid rgba(201,168,76,0.2)',
-                }}
-              >
-                {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+              <button onClick={handleCopy} style={toolBtn(copied ? 'green' : 'gold')}>
+                {copied ? <Check style={{ width: 11, height: 11 }} /> : <Copy style={{ width: 11, height: 11 }} />}
                 {copied ? 'Copied' : 'Copy'}
               </button>
 
+              {hasClaudeCode && onShowClaudeCode && (
+                <button onClick={onShowClaudeCode} style={toolBtn('gold')}>
+                  <Terminal style={{ width: 11, height: 11 }} />
+                  Claude Code
+                </button>
+              )}
+
               {session && (
-                <button
-                  onClick={handleExport}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[10px] font-mono transition-all"
-                  style={{
-                    color:      '#527052',
-                    background: 'rgba(82,112,82,0.08)',
-                    border:     '1px solid rgba(82,112,82,0.2)',
-                  }}
-                  onMouseEnter={(e) => { e.currentTarget.style.color = '#b8d8b8'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.color = '#527052'; }}
-                >
-                  <Download className="w-3 h-3" />
+                <button onClick={handleExport} style={toolBtn('dim')}>
+                  <Download style={{ width: 11, height: 11 }} />
                   Export .txt
                 </button>
               )}
@@ -196,12 +211,12 @@ export default function BoardSummary({ summaryState, session }) {
           )}
 
           {summaryState.content && (
-            <pre
-              className={`response-text ${summaryState.status === 'thinking' ? 'cursor-blink' : ''}`}
-              style={{ color: '#c8e0c8' }}
-            >
-              {summaryState.content}
-            </pre>
+            <MarkdownRenderer
+              content={summaryState.content}
+              fontSize={fontSize}
+              isLight={isLight}
+              animate
+            />
           )}
 
           {summaryState.status === 'error' && (
@@ -211,24 +226,20 @@ export default function BoardSummary({ summaryState, session }) {
           )}
         </div>
 
-        {/* Footer with token count */}
+        {/* Footer token count */}
         {summaryState.status === 'done' && session?.totalTokens && (
           <div
             className="px-6 py-3 flex items-center justify-between"
-            style={{ borderTop: '1px solid rgba(201,168,76,0.08)', background: 'rgba(201,168,76,0.03)' }}
+            style={{ borderTop: `1px solid ${footBdr}`, background: footBg }}
           >
             <div className="flex items-center gap-2">
               <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#4ade80' }} />
-              <span className="text-[10px] font-mono" style={{ color: '#3a5a3a' }}>
-                Session finalized
-              </span>
+              <span className="text-[10px] font-mono" style={{ color: tokColor }}>Session finalized</span>
             </div>
-            <div className="flex items-center gap-3 text-[10px] font-mono" style={{ color: '#3a5a3a' }}>
+            <div className="flex items-center gap-3 text-[10px] font-mono" style={{ color: tokColor }}>
               <span>↑{session.totalTokens.input.toLocaleString()} in</span>
               <span>↓{session.totalTokens.output.toLocaleString()} out</span>
-              <span>
-                Total: {(session.totalTokens.input + session.totalTokens.output).toLocaleString()} tokens
-              </span>
+              <span>Total: {(session.totalTokens.input + session.totalTokens.output).toLocaleString()} tokens</span>
             </div>
           </div>
         )}

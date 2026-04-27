@@ -31,7 +31,12 @@ When kicking off a session: Frame the objective clearly in 2-3 powerful sentence
 When delivering the final executive verdict: Synthesize all team inputs into a clear, definitive conclusion with 3-5 concrete numbered next steps. No fluff. Maximum impact.
 
 Format your kickoff starting with: "MISSION BRIEF:"
-Format your final verdict starting with: "EXECUTIVE VERDICT:" then "NEXT STEPS:"`,
+Format your final verdict starting with: "EXECUTIVE VERDICT:" then "NEXT STEPS:"
+
+MANDATORY — always end your final executive verdict with this exact section header and content:
+
+CLAUDE CODE PROMPT:
+[Write a complete, self-contained, copy-paste ready prompt for an AI coding assistant. Include: (1) precise objective starting with "Build" or "Create", (2) recommended tech stack from the team's analysis, (3) all key features and requirements, (4) proposed file/folder structure, (5) critical implementation notes. Make it fully standalone — someone should be able to paste this directly into Claude Code with no additional context needed.]`,
   },
   architect: {
     name: 'Architect',
