@@ -3,11 +3,15 @@ import { X, Copy, Check, Code2, Terminal } from 'lucide-react';
 
 export function extractClaudeCodePrompt(content) {
   if (!content) return null;
-  const idx = content.indexOf('CLAUDE CODE PROMPT:');
+  // Case-insensitive search — handles CLAUDE CODE PROMPT:, ## Claude Code Prompt:, **CLAUDE CODE PROMPT:**, etc.
+  const idx = content.toLowerCase().indexOf('claude code prompt');
   if (idx === -1) return null;
-  const raw = content.slice(idx + 'CLAUDE CODE PROMPT:'.length).trim();
-  // Strip surrounding markdown fences if present
-  return raw.replace(/^```[\w]*\n?/, '').replace(/\n?```$/, '').trim() || null;
+  // Skip to the end of the header line so we don't include the heading itself
+  const lineEnd = content.indexOf('\n', idx);
+  if (lineEnd === -1) return null; // nothing follows the header
+  const raw = content.slice(lineEnd + 1).trim();
+  // Strip a single surrounding markdown fence block if present
+  return raw.replace(/^```[\w]*\n?/, '').replace(/\n?```\s*$/, '').trim() || null;
 }
 
 export default function ClaudeCodeModal({ directorContent, isLight, onClose }) {

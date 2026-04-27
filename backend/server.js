@@ -137,10 +137,10 @@ function generateMissionId() {
   return `MSN-${num}-${code}`;
 }
 
-async function callAgent(systemPrompt, messages) {
+async function callAgent(systemPrompt, messages, maxTokens = 1024) {
   const response = await anthropic.messages.create({
     model: MODEL,
-    max_tokens: 1024,
+    max_tokens: maxTokens,
     system: systemPrompt,
     messages,
   });
@@ -208,7 +208,7 @@ app.post('/api/agents/run', async (req, res) => {
         content: `Request: "${req$}"\n\nYour boardroom has completed analysis:\n\nARCHITECT:\n${agentOutputs.architect}\n\nSPARK:\n${agentOutputs.spark}\n\nSTACK:\n${agentOutputs.stack}\n\nMEMO:\n${agentOutputs.memo}\n\nSHARP:\n${agentOutputs.sharp}\n\nDeliver your executive verdict and concrete next steps. This is your closing statement to the board.`,
       },
     ];
-    const { content: summary, usage: sumUsage } = await callAgent(getPrompt('director'), summaryMessages);
+    const { content: summary, usage: sumUsage } = await callAgent(getPrompt('director'), summaryMessages, 4000);
     totalInput  += sumUsage.input_tokens;
     totalOutput += sumUsage.output_tokens;
 
@@ -243,7 +243,8 @@ app.post('/api/agents/single', async (req, res) => {
 
   try {
     const messages = buildContextMessages(agentKey, request.trim(), previousOutputs || {});
-    const { content, usage } = await callAgent(getPrompt(agentKey), messages);
+    const agentMaxTokens = agentKey === 'director' ? 4000 : 1024;
+    const { content, usage } = await callAgent(getPrompt(agentKey), messages, agentMaxTokens);
     res.json({ agentKey, content, tokens: usage });
   } catch (err) {
     console.error(`[/api/agents/single/${agentKey}]`, err.message);
