@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import {
   X, Copy, RefreshCw, Check, Loader2, Clock, Hash,
-  ThumbsUp, ThumbsDown, Maximize2, ChevronDown, ChevronUp, Terminal,
+  ThumbsUp, ThumbsDown, Maximize2, ChevronDown, ChevronUp, Terminal, Star,
 } from 'lucide-react';
 import { AGENT_META } from './BoardroomTable.jsx';
 import MarkdownRenderer from './MarkdownRenderer.jsx';
@@ -24,6 +24,8 @@ export default function AgentPanel({
   fontSize,
   onFocusMode,
   onShowClaudeCode,
+  onFavorite,
+  missionTitle,
 }) {
   const meta        = AGENT_META.find((m) => m.key === agentKey);
   const displayName = agentConfigs?.[agentKey]?.name || meta?.name || agentKey;
@@ -242,6 +244,15 @@ export default function AgentPanel({
           >
             <ThumbsDown style={{ width: 12, height: 12 }} />
           </button>
+          {content && onFavorite && (
+            <button
+              onClick={() => onFavorite({ agentKey, agentName: displayName, content, missionTitle })}
+              style={pill(false, '#C9A84C')}
+              title="Save to Favorites"
+            >
+              <Star style={{ width: 12, height: 12 }} />
+            </button>
+          )}
         </div>
 
         {/* Right: focus + claude code + re-run */}

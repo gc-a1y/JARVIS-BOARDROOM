@@ -17,6 +17,7 @@ const FONT_LABELS = { sm: 'S', md: 'M', lg: 'L' };
 export default function Header({
   missionId, isRunning, isLight, onToggleTheme,
   fontSize, onFontSize, onFocusMode, onKeyboardShortcuts,
+  timerSeconds,
 }) {
   const [time, setTime] = useState(militaryTime);
   useEffect(() => {
@@ -62,9 +63,19 @@ export default function Header({
       {/* Center: mission ID */}
       <div className="flex items-center gap-3">
         {isRunning && (
-          <div className="flex items-center gap-1.5">
-            <Radio className="w-3 h-3 animate-pulse" style={{ color: '#cc2200' }} />
-            <span className="text-[10px] font-mono uppercase" style={{ color: '#cc4400' }}>Live</span>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
+              <Radio className="w-3 h-3 animate-pulse" style={{ color: '#cc2200' }} />
+              <span className="text-[10px] font-mono uppercase" style={{ color: '#cc4400' }}>Live</span>
+            </div>
+            {timerSeconds > 0 && (
+              <span
+                className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded"
+                style={{ background: 'rgba(201,168,76,0.1)', color: '#C9A84C', border: '1px solid rgba(201,168,76,0.2)' }}
+              >
+                {String(Math.floor(timerSeconds / 60)).padStart(2, '0')}:{String(timerSeconds % 60).padStart(2, '0')}
+              </span>
+            )}
           </div>
         )}
         {missionId && (

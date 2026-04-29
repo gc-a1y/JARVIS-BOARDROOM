@@ -21,7 +21,7 @@ const SEAT_STYLES = {
   sharp:     { position: 'absolute', left: '27%', bottom:'2%' },
 };
 
-function AgentSeat({ meta, status, isSelected, onClick }) {
+function AgentSeat({ meta, status, isSelected, onClick, avatar }) {
   const { key, name, role, icon: Icon, color } = meta;
   const isThinking = status === 'thinking';
   const isDone     = status === 'done';
@@ -61,6 +61,8 @@ function AgentSeat({ meta, status, isSelected, onClick }) {
         >
           {isThinking ? (
             <Loader2 className="w-5 h-5 animate-spin" style={{ color }} />
+          ) : avatar ? (
+            <span style={{ fontSize: 20, lineHeight: 1 }}>{avatar}</span>
           ) : (
             <Icon className="w-5 h-5 transition-transform duration-200" style={{ color }} />
           )}
@@ -229,6 +231,7 @@ export default function BoardroomTable({ agentStates, selectedAgent, onAgentClic
             status={agentStates[meta.key]?.status ?? 'idle'}
             isSelected={selectedAgent === meta.key}
             onClick={onAgentClick}
+            avatar={agentConfigs?.[meta.key]?.avatar || ''}
           />
         ))}
       </div>
